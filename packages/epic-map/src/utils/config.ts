@@ -425,3 +425,9 @@ export const highlightTileUrl = (
 ): string =>
   `${wmsTileUrl(objectName)}&FEATUREID=${encodeURIComponent(featureId)}` +
   `&SLD_BODY=${encodeURIComponent(highlightSld(objectName))}`;
+
+/**
+ * Largest file the panel will take in, in megabytes. The check is client-side
+ * so an oversized file is refused before anything reads it.
+ */
+export const MAX_IMPORT_FILE_MB = 50;
