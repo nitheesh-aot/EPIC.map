@@ -21,17 +21,15 @@ import { alpha, useTheme } from "@mui/material/styles";
 import ImportPreviewMap, {
   MIN_PREVIEW_HEIGHT,
 } from "@/components/Layers/UserLayers/ImportPreviewMap";
-import { layerNameFromFile } from "@/components/Layers/UserLayers/importFile";
 import {
   hasProblem,
+  layerNameFromFile,
+  parseImportFile,
   validateImportForm,
   type ImportFormProblems,
-  type SensitiveChoice,
-} from "@/components/Layers/UserLayers/importForm";
-import {
-  parseImportFile,
   type ParsedImport,
-} from "@/components/Layers/UserLayers/parseImportFile";
+  type SensitiveChoice,
+} from "@/components/Layers/UserLayers/importUtils";
 
 /** Everything the user settled on, handed over when they upload. */
 export type ImportDraft = {

@@ -1,5 +1,5 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
-import type { Geometry } from "geojson";
+import type { FeatureCollection, Geometry } from "geojson";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import {
   HIGHLIGHT_CASING_COLOR,
@@ -376,4 +376,90 @@ export const layersBelowFloor = (
     if (!current.has(id)) return next;
   }
   return current;
+};
+
+// Layers the user imported
+
+/**
+ * An imported layer is drawn from its own features rather than tiles: they
+ * came from the user's file, and no warehouse serves them. Styled the way the
+ * import preview drew them, so the layer looks as it did before Upload.
+ */
+
+const importedSourceId = (layerId: string) =>
+  `${WIDGET_ID_PREFIX}imported-src-${layerId}`;
+const IMPORTED_PARTS = ["fill", "line", "point"] as const;
+const importedLayerId = (
+  layerId: string,
+  part: (typeof IMPORTED_PARTS)[number],
+) => `${WIDGET_ID_PREFIX}imported-${part}-${layerId}`;
+
+export interface ImportedLayerColors {
+  line: string;
+  fill: string;
+}
+
+/** Draw an imported layer, once. A layer already on the map is left as it is. */
+export const showImportedLayer = (
+  map: MapLibreMap,
+  layerId: string,
+  features: FeatureCollection,
+  colors: ImportedLayerColors,
+) => {
+  whenStyleReady(map, () => {
+    const source = importedSourceId(layerId);
+    if (map.getSource(source)) return;
+
+    map.addSource(source, { type: "geojson", data: features });
+    // Under a selected feature's highlight, which has to stay readable on top.
+    const beneath = map.getLayer(HIGHLIGHT_FILL) ? HIGHLIGHT_FILL : undefined;
+
+    map.addLayer(
+      {
+        id: importedLayerId(layerId, "fill"),
+        type: "fill",
+        source,
+        filter: ["==", ["geometry-type"], "Polygon"],
+        paint: { "fill-color": colors.fill },
+      },
+      beneath,
+    );
+    map.addLayer(
+      {
+        id: importedLayerId(layerId, "line"),
+        type: "line",
+        source,
+        filter: ["!=", ["geometry-type"], "Point"],
+        paint: { "line-color": colors.line, "line-width": 2 },
+      },
+      beneath,
+    );
+    map.addLayer(
+      {
+        id: importedLayerId(layerId, "point"),
+        type: "circle",
+        source,
+        filter: ["==", ["geometry-type"], "Point"],
+        paint: {
+          "circle-radius": 5,
+          "circle-color": colors.fill,
+          "circle-stroke-color": colors.line,
+          "circle-stroke-width": 2,
+        },
+      },
+      beneath,
+    );
+  });
+};
+
+/** Take an imported layer off the map, features and all. */
+export const removeImportedLayer = (map: MapLibreMap, layerId: string) => {
+  whenStyleReady(map, () => {
+    for (const part of IMPORTED_PARTS) {
+      const id = importedLayerId(layerId, part);
+      if (map.getLayer(id)) map.removeLayer(id);
+    }
+    const source = importedSourceId(layerId);
+    if (map.getSource(source)) map.removeSource(source);
+  });
 };

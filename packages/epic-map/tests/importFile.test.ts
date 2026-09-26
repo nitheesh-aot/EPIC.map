@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   rejectImportFile,
   triageImportFiles,
-} from "@/components/Layers/UserLayers/importFile";
+} from "@/components/Layers/UserLayers/importUtils";
 import { MAX_IMPORT_FILE_MB } from "@/utils/config";
 
 const MB = 1024 * 1024;

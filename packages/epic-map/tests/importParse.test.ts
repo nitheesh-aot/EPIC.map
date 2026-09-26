@@ -2,15 +2,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Feature } from "geojson";
 import {
-  formatOf,
-  layerNameFromFile,
-} from "@/components/Layers/UserLayers/importFile";
-import {
   asFeatureCollection,
+  formatOf,
   geoBounds,
   geometrySummary,
+  layerNameFromFile,
   parseImportFile,
-} from "@/components/Layers/UserLayers/parseImportFile";
+  touchesBc,
+} from "@/components/Layers/UserLayers/importUtils";
 
 const feature = (type: string, coordinates: unknown): Feature =>
   ({
@@ -155,6 +154,28 @@ describe("parseImportFile", () => {
     ).rejects.toThrow(/could not be read as GeoJSON/);
   });
 
+  it("refuses a layer with nothing inside British Columbia", async () => {
+    const london = { type: "Point", coordinates: [-0.13, 51.51] };
+
+    await expect(parseImportFile(geoJsonFile(london))).rejects.toThrow(
+      "This layer lies entirely outside British Columbia.",
+    );
+  });
+
+  it("takes a layer with only part of it inside British Columbia", async () => {
+    const crossing = {
+      type: "LineString",
+      coordinates: [
+        [-0.13, 51.51],
+        [-123.37, 48.42],
+      ],
+    };
+
+    await expect(parseImportFile(geoJsonFile(crossing))).resolves.toMatchObject({
+      featureCount: 1,
+    });
+  });
+
   it("refuses a collection with nothing in it", async () => {
     await expect(
       parseImportFile(geoJsonFile({ type: "FeatureCollection", features: [] })),
@@ -193,5 +214,16 @@ describe("parseImportFile, shapefiles", () => {
     await expect(parseImportFile(fixture("point-no-prj.zip"))).rejects.toThrow(
       /No coordinate system was found/,
     );
+  });
+});
+
+describe("touchesBc", () => {
+  it("counts an extent that only overlaps the province's edge", () => {
+    // Straddling the Alberta border.
+    expect(touchesBc([-115, 50, -110, 52])).toBe(true);
+  });
+
+  it("refuses an extent wholly beyond it", () => {
+    expect(touchesBc([-80, 43, -79, 44])).toBe(false);
   });
 });

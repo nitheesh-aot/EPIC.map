@@ -1,11 +1,122 @@
 import type { Feature, FeatureCollection, Position } from "geojson";
-import {
-  formatOf,
-  IMPORT_FORMATS_LABEL,
-  type ImportFormat,
-} from "@/components/Layers/UserLayers/importFile";
-import { reprojectedFrom } from "@/components/Layers/UserLayers/projection";
 import type { MapExtent } from "@/types";
+import { BC_EXTENT, MAX_IMPORT_FILE_MB } from "@/utils/config";
+
+/**
+ * Everything that happens to an imported file before Upload: whether the
+ * panel will take it, what coordinate system it came in, what it holds, and
+ * whether the form it is saved under is complete.
+ */
+
+// Formats and file checks
+
+const MAX_IMPORT_FILE_BYTES = MAX_IMPORT_FILE_MB * 1024 * 1024;
+
+/** What the panel calls a format, which is not one name per extension. */
+export type ImportFormat = "KML" | "GeoJSON" | "Shapefile";
+
+/**
+ * Extension to the format it carries. A shapefile arrives zipped because the
+ * format is several sibling files that only mean anything together, and
+ * GeoJSON is published under both of its conventional extensions.
+ */
+const FORMATS = new Map<string, ImportFormat>([
+  [".kml", "KML"],
+  [".geojson", "GeoJSON"],
+  [".json", "GeoJSON"],
+  [".zip", "Shapefile"],
+]);
+
+/** The `accept` attribute of the file input. */
+export const IMPORT_ACCEPT = [...FORMATS.keys()].join(",");
+
+/** How the panel names the formats, which is not one per extension. */
+export const IMPORT_FORMATS_LABEL = "KML, GeoJSON, Shapefile (.zip)";
+
+/** Enough of a file to judge it; `File` satisfies this, so tests need no DOM. */
+export type ImportCandidate = { name: string; size: number };
+
+export type ImportRejection = { name: string; reason: string };
+
+const extensionOf = (name: string): string => {
+  const dot = name.lastIndexOf(".");
+  return dot === -1 ? "" : name.slice(dot).toLowerCase();
+};
+
+/** The format a file's extension claims, or `null` for one we cannot read. */
+export const formatOf = (name: string): ImportFormat | null =>
+  FORMATS.get(extensionOf(name)) ?? null;
+
+/** The file name without its extension, which prefills the layer name. */
+export const layerNameFromFile = (name: string): string => {
+  const dot = name.lastIndexOf(".");
+  return (dot > 0 ? name.slice(0, dot) : name).trim();
+};
+
+/** Why a file cannot be imported, or `null` when it can. */
+export const rejectImportFile = (file: ImportCandidate): string | null => {
+  if (!formatOf(file.name))
+    return `Unsupported format. Accepts ${IMPORT_FORMATS_LABEL}.`;
+  if (file.size > MAX_IMPORT_FILE_BYTES)
+    return `Larger than the ${MAX_IMPORT_FILE_MB} MB limit.`;
+  if (file.size === 0) return "This file is empty.";
+  return null;
+};
+
+/**
+ * Splits a drop into what may be imported and what may not, so one bad file
+ * among several does not sink the rest.
+ */
+export const triageImportFiles = <T extends ImportCandidate>(
+  files: readonly T[],
+): { accepted: T[]; rejected: ImportRejection[] } => {
+  const accepted: T[] = [];
+  const rejected: ImportRejection[] = [];
+
+  for (const file of files) {
+    const reason = rejectImportFile(file);
+    if (reason) rejected.push({ name: file.name, reason });
+    else accepted.push(file);
+  }
+
+  return { accepted, rejected };
+};
+
+// Coordinate systems
+
+/**
+ * What a shapefile's `.prj` says its coordinates are in.
+ *
+ * Only enough of the WKT is read to name the system and tell whether it is
+ * already WGS 84 - the conversion itself is proj4's job, inside shpjs.
+ */
+
+/** The name the WKT gives its outermost coordinate system. */
+export const crsName = (wkt: string): string | null => {
+  const named = /\b(?:PROJCS|GEOGCS|GEOGCRS|PROJCRS)\s*\[\s*"([^"]+)"/i.exec(
+    wkt,
+  );
+  // Underscores are how WKT spells spaces: NAD_1983_BC_Environment_Albers.
+  return named ? named[1].replace(/_/g, " ").trim() || null : null;
+};
+
+/** Whether the file is already in the coordinates the map draws in. */
+export const isWgs84 = (wkt: string): boolean => {
+  if (/\bPROJCS\s*\[|\bPROJCRS\s*\[/i.test(wkt)) return false;
+  const name = crsName(wkt);
+  return name !== null && /\bWGS\s*(19)?84\b/i.test(name);
+};
+
+/**
+ * The system the coordinates were converted from, or `null` when nothing was
+ * converted. Named so the warning can say what the file was drawn in.
+ */
+export const reprojectedFrom = (wkt: string | null): string | null => {
+  if (!wkt?.trim() || isWgs84(wkt)) return null;
+  return crsName(wkt) ?? "an unnamed coordinate system";
+};
+
+// Reading a file
 
 /** What the panel reports about a file, once it has been read. */
 export type ParsedImport = {
@@ -78,6 +189,12 @@ export const geoBounds = (features: readonly Feature[]): MapExtent | null => {
   }
 
   return west === Infinity ? null : [west, south, east, north];
+};
+
+/** Whether any part of the extent overlaps the province. */
+export const touchesBc = ([west, south, east, north]: MapExtent): boolean => {
+  const [bcWest, bcSouth, bcEast, bcNorth] = BC_EXTENT;
+  return west <= bcEast && east >= bcWest && south <= bcNorth && north >= bcSouth;
 };
 
 const isFeature = (value: unknown): value is Feature =>
@@ -215,12 +332,62 @@ export const parseImportFile = async (file: File): Promise<ParsedImport> => {
   if (geojson.features.length === 0)
     throw new Error("This file holds no features to import.");
 
+  const bounds = geoBounds(geojson.features);
+  // map-api refuses such a layer too, but only once the whole file has been
+  // sent and stored - saying so here spares the user the upload.
+  if (bounds && !touchesBc(bounds))
+    throw new Error("This layer lies entirely outside British Columbia.");
+
   return {
     format,
     geojson,
     geometryType: geometrySummary(geojson.features),
     featureCount: geojson.features.length,
-    bounds: geoBounds(geojson.features),
+    bounds,
     reprojectedFrom: read.reprojectedFrom,
   };
 };
+
+// The form it is saved under
+
+/** Shown under the radios when neither has been chosen. */
+export const SENSITIVE_REQUIRED =
+  "Select whether this layer contains sensitive information";
+
+export type SensitiveChoice = "yes" | "no" | "";
+
+/** What is wrong with the form, field by field; `null` where nothing is. */
+export type ImportFormProblems = {
+  name: string | null;
+  sensitive: string | null;
+};
+
+const nameProblem = (
+  name: string,
+  existingNames: readonly string[],
+): string | null => {
+  if (!name) return "Enter a layer name.";
+
+  const taken = existingNames.some(
+    (existing) => existing.trim().toLowerCase() === name.toLowerCase(),
+  );
+  return taken
+    ? `You already have a layer named "${name}". Enter a different name.`
+    : null;
+};
+
+/**
+ * Checked on Upload rather than as the user types: the form opens with an
+ * empty name and no choice made, and neither is a mistake until they submit.
+ */
+export const validateImportForm = (
+  name: string,
+  sensitive: SensitiveChoice,
+  existingNames: readonly string[],
+): ImportFormProblems => ({
+  name: nameProblem(name.trim(), existingNames),
+  sensitive: sensitive === "" ? SENSITIVE_REQUIRED : null,
+});
+
+export const hasProblem = (problems: ImportFormProblems): boolean =>
+  problems.name !== null || problems.sensitive !== null;

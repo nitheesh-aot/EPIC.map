@@ -12,7 +12,7 @@ import {
   IMPORT_ACCEPT,
   IMPORT_FORMATS_LABEL,
   triageImportFiles,
-} from "@/components/Layers/UserLayers/importFile";
+} from "@/components/Layers/UserLayers/importUtils";
 import { MAX_IMPORT_FILE_MB } from "@/utils/config";
 
 /** A drag carrying files, rather than a favourite row being moved about. */

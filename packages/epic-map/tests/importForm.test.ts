@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  hasProblem,
-  SENSITIVE_REQUIRED,
-  validateImportForm,
-} from "@/components/Layers/UserLayers/importForm";
-import {
   crsName,
+  hasProblem,
   isWgs84,
   reprojectedFrom,
-} from "@/components/Layers/UserLayers/projection";
+  SENSITIVE_REQUIRED,
+  validateImportForm,
+} from "@/components/Layers/UserLayers/importUtils";
 
 const BC_ALBERS =
   'PROJCS["NAD_1983_BC_Environment_Albers",GEOGCS["GCS_North_American_1983",' +
