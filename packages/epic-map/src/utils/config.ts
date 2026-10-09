@@ -449,3 +449,9 @@ export const MAX_LAYER_DESCRIPTION_LENGTH = 1000;
  * so this is long enough to ride out a blip and short enough to be honest.
  */
 export const UPLOAD_STALL_AFTER_MS = 5000;
+
+/** How often project dots are refreshed; matches map-api's cache of EPIC.Track. */
+export const PROJECTS_REFRESH_MS = 5 * 60_000;
+
+/** Width of the project card docked on the map's right edge. */
+export const PROJECT_CARD_WIDTH_PX = 360;

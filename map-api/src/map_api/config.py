@@ -218,6 +218,11 @@ class _Config():  # pylint: disable=too-few-public-methods
     KEYCLOAK_ADMIN_USERNAME = os.getenv('MET_ADMIN_CLIENT_ID')
     KEYCLOAK_ADMIN_SECRET = os.getenv('MET_ADMIN_CLIENT_SECRET')
 
+    # EPIC.Track, read server to server with this API's own service account.
+    EPIC_TRACK_API_URL = (os.getenv('EPIC_TRACK_API_URL') or '').rstrip('/')
+    EPIC_TRACK_CLIENT_ID = os.getenv('EPIC_TRACK_CLIENT_ID')
+    EPIC_TRACK_CLIENT_SECRET = os.getenv('EPIC_TRACK_CLIENT_SECRET')
+
 
 class DevConfig(_Config):  # pylint: disable=too-few-public-methods
     """Dev Config."""
