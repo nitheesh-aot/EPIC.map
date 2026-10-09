@@ -105,3 +105,39 @@ def test_track_unavailable_is_a_503(app, client, jwt, session):
         response = client.get(ENDPOINT, headers=factory_auth_header(jwt))
 
     assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+
+
+def test_works_are_listed_for_the_card(app, client, jwt, session):
+    """Camel cased, in the order the service returned them."""
+    work = {
+        'id': 3,
+        'title': 'Amendment - Transmission line',
+        'state': 'IN_PROGRESS',
+        'phase_name': 'Amendment Review (Typical)',
+        'start_date': '2024-01-01T00:00:00+00:00',
+        'decision_date': None,
+        'description': 'Proposes to amend.',
+    }
+    with patch(SERVICE) as service:
+        service.project_works.return_value = [work]
+        response = client.get(f'{ENDPOINT}/7/works', headers=factory_auth_header(jwt))
+
+    assert response.status_code == HTTPStatus.OK
+    service.project_works.assert_called_once_with(7)
+    assert response.json == [{
+        'id': 3,
+        'title': 'Amendment - Transmission line',
+        'state': 'IN_PROGRESS',
+        'phaseName': 'Amendment Review (Typical)',
+        'decisionDate': None,
+        'description': 'Proposes to amend.',
+    }]
+
+
+def test_works_of_a_closed_project_are_a_404(app, client, jwt, session):
+    """Only open projects have works to show."""
+    with patch(SERVICE) as service:
+        service.project_works.return_value = None
+        response = client.get(f'{ENDPOINT}/8/works', headers=factory_auth_header(jwt))
+
+    assert response.status_code == HTTPStatus.NOT_FOUND

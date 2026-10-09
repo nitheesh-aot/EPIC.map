@@ -8,16 +8,16 @@ import type {
 } from "maplibre-gl";
 import { useProjects } from "@/api/useProjects";
 import ProjectCard from "@/components/Projects/ProjectCard";
-import { glyphForType } from "@/components/Projects/projectIcons";
 import {
   addMissingProjectImage,
+  type DrawnProjectPoint,
+  glyphForType,
   keepProjectsOnTop,
   projectIdAt,
   PROJECTS_LAYER_ID,
   setSelectedProject,
   showProjects,
-  type DrawnProjectPoint,
-} from "@/components/Projects/projectLayer";
+} from "@/components/Projects/projectUtils";
 import { FOCUS_FLY_MS, PROJECT_CARD_WIDTH_PX } from "@/utils/config";
 
 /** Space kept between a revealed dot and the card's edge. */

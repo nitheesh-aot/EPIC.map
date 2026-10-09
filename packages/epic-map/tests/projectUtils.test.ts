@@ -1,18 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { createExpression } from "@maplibre/maplibre-gl-style-spec";
 import type { ExpressionSpecification, Map as MapLibreMap } from "maplibre-gl";
+import type { ProjectWork } from "@/api/useProjects";
 import {
+  formatWorkDate,
   glyphForType,
-  parseProjectImageId,
-  projectImageId,
-} from "@/components/Projects/projectIcons";
-import {
   keepProjectsOnTop,
+  parseProjectImageId,
   projectIconImage,
   projectIdAt,
-  projectSortKey,
+  projectImageId,
   PROJECTS_LAYER_ID,
-} from "@/components/Projects/projectLayer";
+  projectSortKey,
+  workMetaLine,
+  workStateBadge,
+} from "@/components/Projects/projectUtils";
 
 describe("glyphForType", () => {
   it.each([
@@ -145,5 +147,72 @@ describe("projectIdAt", () => {
   it("is null off a dot, or before the dots are drawn", () => {
     expect(projectIdAt(fakeMap([PROJECTS_LAYER_ID]).map, [0, 0])).toBeNull();
     expect(projectIdAt(fakeMap([]).map, [0, 0])).toBeNull();
+  });
+});
+
+describe("workStateBadge", () => {
+  it.each([
+    ["COMPLETED", "Completed", "#d8eafd", "#053662"],
+    ["IN_PROGRESS", "In Progress", "#f6fff8", "#42814a"],
+    ["TERMINATED", "Terminated", "#f4e1e2", "#ce3e39"],
+    ["WITHDRAWN", "Withdrawn", "#f4e1e2", "#ce3e39"],
+    ["SUSPENDED", "Suspended", "#f4e1e2", "#ce3e39"],
+    ["CLOSED", "Closed", "#f3f2f1", "#353433"],
+  ])("colours %s", (state, label, fill, border) => {
+    expect(workStateBadge(state)).toEqual({ label, fill, border });
+  });
+
+  it.each([null, undefined, "", "  ", "ON_HOLD"])(
+    "falls back to Completed for %s",
+    (state) => {
+      expect(workStateBadge(state)).toEqual(workStateBadge("COMPLETED"));
+    },
+  );
+});
+
+const work = (overrides: Partial<ProjectWork>): ProjectWork => ({
+  id: 1,
+  title: "Amendment",
+  state: "COMPLETED",
+  phaseName: "Amendment Review (Typical)",
+  decisionDate: "2023-10-10T07:00:00+00:00",
+  description: null,
+  ...overrides,
+});
+
+describe("workMetaLine", () => {
+  it("shows the phase for an active work", () => {
+    expect(workMetaLine(work({ state: "IN_PROGRESS" }))).toBe(
+      "Amendment Review (Typical)",
+    );
+    expect(workMetaLine(work({ state: "SUSPENDED" }))).toBe(
+      "Amendment Review (Typical)",
+    );
+  });
+
+  it("shows the decision and its date for a decided work", () => {
+    expect(workMetaLine(work({}))).toBe("Decision · 10 Oct 2023");
+    expect(workMetaLine(work({ state: "TERMINATED" }))).toBe(
+      "Decision · 10 Oct 2023",
+    );
+  });
+
+  it("falls back to the phase when a decided work has no date", () => {
+    expect(workMetaLine(work({ decisionDate: null }))).toBe(
+      "Amendment Review (Typical)",
+    );
+    expect(workMetaLine(work({ decisionDate: null, phaseName: null }))).toBeNull();
+  });
+});
+
+describe("formatWorkDate", () => {
+  it("formats in BC time", () => {
+    // 03:00 UTC on the 11th is still the 10th in Vancouver.
+    expect(formatWorkDate("2023-10-11T03:00:00+00:00")).toBe("10 Oct 2023");
+    expect(formatWorkDate("2024-09-05T19:00:00+00:00")).toBe("5 Sep 2024");
+  });
+
+  it("is null for something that is not a date", () => {
+    expect(formatWorkDate("soon")).toBeNull();
   });
 });

@@ -43,6 +43,20 @@ class ProjectSchema(ProjectPointSchema):
     latitude = fields.Float()
 
 
+class ProjectWorkSchema(Schema):
+    """One work on a project's card."""
+
+    id = fields.Int()
+    title = fields.Str(allow_none=True, metadata={'description': 'Work type and simple title'})
+    state = fields.Str(
+        allow_none=True,
+        metadata={'description': 'EPIC.Track work state, e.g. IN_PROGRESS or COMPLETED'},
+    )
+    phase_name = fields.Str(allow_none=True, data_key='phaseName')
+    decision_date = fields.Str(allow_none=True, data_key='decisionDate')
+    description = fields.Str(allow_none=True)
+
+
 def to_feature_collection(projects: list) -> dict:
     """Build the GeoJSON the map adds as a source."""
     point_schema = ProjectPointSchema()

@@ -17,6 +17,7 @@ Track is read live and cached briefly rather than copied: see claude-docs/06.
 """
 
 import threading
+from datetime import datetime, timezone
 from typing import Optional
 
 import requests
@@ -35,6 +36,7 @@ PROJECTS_KEY = 'epic-track:projects'
 # No expiry: during a Track outage the map keeps the last list it had.
 LAST_GOOD_PROJECTS_KEY = 'epic-track:projects:last-good'
 TOKEN_KEY = 'epic-track:token'
+WORKS_KEY_PREFIX = 'epic-track:works:'
 
 WORK_IN_PROGRESS = 'IN_PROGRESS'
 
@@ -77,6 +79,35 @@ class TrackService:
             None,
         )
 
+    @classmethod
+    def project_works(cls, project_id: int) -> Optional[list]:
+        """Return every work on one open project in card order, or None for no such project.
+
+        In progress first, newest start first; then the rest by decision date, newest first.
+        """
+        project = cls.open_project(project_id)
+        if project is None:
+            return None
+
+        key = f'{WORKS_KEY_PREFIX}{project_id}'
+        works = cache.get(key)
+        if works is not None:
+            return works
+
+        # The listing is the one Track endpoint that filters by project. Names are unique in
+        # Track; the id check guards against a rename between refreshes.
+        listing = cls._post(
+            'works/listing',
+            {'filters': [{'id': 'project.name', 'value': [project['name']]}]},
+        )
+        works = _sorted_works([
+            _to_work(work)
+            for work in (listing or {}).get('items', [])
+            if work.get('project_id') == project_id
+        ])
+        cache.set(key, works, timeout=EPIC_TRACK_PROJECTS_CACHE_TTL_SECONDS)
+        return works
+
     @staticmethod
     def _last_good() -> list:
         projects = cache.get(LAST_GOOD_PROJECTS_KEY)
@@ -115,16 +146,24 @@ class TrackService:
 
     @classmethod
     def _get(cls, path: str, params: dict):
+        return cls._call(requests.get, path, params=params)
+
+    @classmethod
+    def _post(cls, path: str, body: dict):
+        return cls._call(requests.post, path, json=body)
+
+    @classmethod
+    def _call(cls, send, path: str, **kwargs):
         url = f"{current_app.config.get('EPIC_TRACK_API_URL')}/api/v1/{path}"
         response = None
         # A token Track refuses is dropped and replaced once.
         for _ in range(2):
             try:
-                response = requests.get(
+                response = send(
                     url,
-                    params=params,
                     headers={'Authorization': f'Bearer {cls._token()}'},
                     timeout=EPIC_TRACK_TIMEOUT_SECONDS,
+                    **kwargs,
                 )
             except requests.RequestException as exc:
                 current_app.logger.error('EPIC.Track %s failed: %s', path, exc)
@@ -211,3 +250,40 @@ def _to_project(project: dict, location: tuple, has_works_in_progress: bool) -> 
         'ea_certificate': project.get('ea_certificate'),
         'has_works_in_progress': has_works_in_progress,
     }
+
+
+def _to_work(work: dict) -> dict:
+    phase = work.get('current_work_phase') or {}
+    title = ' - '.join(
+        part for part in (_name_of(work.get('work_type')), (work.get('simple_title') or '').strip()) if part
+    )
+    return {
+        'id': work.get('id'),
+        'title': title or work.get('title'),
+        'state': work.get('work_state'),
+        'phase_name': phase.get('name') or _name_of(phase.get('phase')),
+        'start_date': work.get('start_date'),
+        'decision_date': work.get('work_decision_date') or work.get('decision_date'),
+        # The EPIC (public) description where Track has one.
+        'description': work.get('epic_description') or work.get('report_description'),
+    }
+
+
+_UNDATED = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _when(value) -> datetime:
+    """Parse one of Track's ISO timestamps; anything unreadable sorts last."""
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return _UNDATED
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _sorted_works(works: list) -> list:
+    in_progress = [work for work in works if work['state'] == WORK_IN_PROGRESS]
+    rest = [work for work in works if work['state'] != WORK_IN_PROGRESS]
+    in_progress.sort(key=lambda work: _when(work['start_date']), reverse=True)
+    rest.sort(key=lambda work: _when(work['decision_date']), reverse=True)
+    return in_progress + rest

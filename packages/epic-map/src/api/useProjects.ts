@@ -53,3 +53,28 @@ export const useProject = (projectId: number | null) => {
     staleTime: PROJECTS_REFRESH_MS,
   });
 };
+
+/** One work on a project's card, as map-api orders them. */
+export interface ProjectWork {
+  id: number;
+  title: string | null;
+  state: string | null;
+  phaseName: string | null;
+  decisionDate: string | null;
+  description: string | null;
+}
+
+export const useProjectWorks = (projectId: number) => {
+  const { api } = useMapWidget();
+
+  return useQuery({
+    queryKey: epicMapQueryKey("projects", projectId, "works"),
+    queryFn: async ({ signal }) =>
+      (
+        await api.get<ProjectWork[]>(`${PROJECTS_PATH}/${projectId}/works`, {
+          signal,
+        })
+      ).data,
+    staleTime: PROJECTS_REFRESH_MS,
+  });
+};

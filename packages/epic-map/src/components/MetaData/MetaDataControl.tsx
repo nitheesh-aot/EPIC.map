@@ -28,7 +28,7 @@ import {
   showHighlight,
 } from "@/components/Layers/layerUtils";
 import { useImportedLayersContext } from "@/components/Layers/UserLayers/ImportedLayersContext";
-import { projectIdAt } from "@/components/Projects/projectLayer";
+import { projectIdAt } from "@/components/Projects/projectUtils";
 import type { MapExtent } from "@/types";
 import {
   FOCUS_FLY_MS,

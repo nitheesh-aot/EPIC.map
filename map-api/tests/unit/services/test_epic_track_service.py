@@ -262,3 +262,108 @@ def test_open_project_finds_one_or_none(app):
         assert TrackService.open_project(1)['id'] == 1
         assert TrackService.open_project(2) is None
         assert TrackService.open_project(99) is None
+
+
+def _listed_work(work_id, project_id=1, **overrides):
+    work = {
+        'id': work_id,
+        'project_id': project_id,
+        'work_type': {'id': 5, 'name': 'Amendment'},
+        'simple_title': 'Transmission line & work camp locations',
+        'title': 'Project 1 - Amendment - Transmission line & work camp locations',
+        'work_state': 'COMPLETED',
+        'current_work_phase': {'id': 9, 'name': 'Decision', 'phase': {'name': 'Decision'}},
+        'start_date': '2022-01-10T08:00:00+00:00',
+        'decision_date': None,
+        'work_decision_date': '2023-10-10T07:00:00+00:00',
+        'epic_description': 'Proposes to amend the project.',
+        'report_description': 'Internal summary.',
+    }
+    work.update(overrides)
+    return work
+
+
+def _track_with_listing(listing):
+    """Answer Track's GETs, and the works listing POST alongside the token POST."""
+    def post(url, data=None, json=None, headers=None, timeout=None):  # pylint: disable=unused-argument
+        if url == TOKEN_URL:
+            return _token()
+        if url == f'{TRACK_URL}/api/v1/works/listing':
+            return _Response({'items': listing, 'total': len(listing)})
+        raise AssertionError(f'unexpected url {url}')
+    return post
+
+
+def test_project_works_are_listed_by_project_name(app):
+    """One listing call filtered to the project, finished works included."""
+    post = _track_with_listing([_listed_work(1)])
+    with patch(POST, side_effect=post) as posted, \
+            patch(GET, side_effect=_track([_project(1)], [])):
+        works = TrackService.project_works(1)
+
+    listing_call = [c for c in posted.call_args_list if c.args[0].endswith('/works/listing')][0]
+    assert listing_call.kwargs['json'] == {
+        'filters': [{'id': 'project.name', 'value': ['Project 1']}]
+    }
+    assert works == [{
+        'id': 1,
+        'title': 'Amendment - Transmission line & work camp locations',
+        'state': 'COMPLETED',
+        'phase_name': 'Decision',
+        'start_date': '2022-01-10T08:00:00+00:00',
+        'decision_date': '2023-10-10T07:00:00+00:00',
+        'description': 'Proposes to amend the project.',
+    }]
+
+
+def test_project_works_are_in_card_order(app):
+    """In progress first (newest start first), then by decision date, newest first, undated last."""
+    listing = [
+        _listed_work(1, work_decision_date='2020-01-01T00:00:00+00:00'),
+        _listed_work(2, work_state='IN_PROGRESS', work_decision_date=None,
+                     start_date='2024-01-01T00:00:00+00:00'),
+        _listed_work(3, work_decision_date=None),
+        _listed_work(4, work_state='TERMINATED', work_decision_date='2023-06-01T00:00:00-07:00'),
+        _listed_work(5, work_state='IN_PROGRESS', work_decision_date=None,
+                     start_date='2025-03-01T00:00:00+00:00'),
+        _listed_work(6, project_id=2),
+    ]
+    with patch(POST, side_effect=_track_with_listing(listing)), \
+            patch(GET, side_effect=_track([_project(1)], [])):
+        works = TrackService.project_works(1)
+
+    assert [work['id'] for work in works] == [5, 2, 4, 1, 3]
+
+
+def test_a_work_without_a_simple_title_or_public_description(app):
+    """The title is the work type alone; the report description stands in."""
+    listing = [_listed_work(1, simple_title='', epic_description=None,
+                            current_work_phase={'name': None, 'phase': {'name': 'Early Engagement'}})]
+    with patch(POST, side_effect=_track_with_listing(listing)), \
+            patch(GET, side_effect=_track([_project(1)], [])):
+        work = TrackService.project_works(1)[0]
+
+    assert work['title'] == 'Amendment'
+    assert work['description'] == 'Internal summary.'
+    assert work['phase_name'] == 'Early Engagement'
+
+
+def test_project_works_are_cached(app):
+    """Opening the same card again does not ask Track again."""
+    with patch(POST, side_effect=_track_with_listing([_listed_work(1)])) as posted, \
+            patch(GET, side_effect=_track([_project(1)], [])):
+        TrackService.project_works(1)
+        TrackService.project_works(1)
+
+    assert len([c for c in posted.call_args_list if c.args[0].endswith('/works/listing')]) == 1
+
+
+def test_works_of_a_closed_or_unknown_project_are_none(app):
+    """No card, no works, and no listing call."""
+    projects = [_project(2, is_project_closed=True)]
+    with patch(POST, side_effect=_track_with_listing([])) as posted, \
+            patch(GET, side_effect=_track(projects, [])):
+        assert TrackService.project_works(2) is None
+        assert TrackService.project_works(99) is None
+
+    assert not [c for c in posted.call_args_list if c.args[0].endswith('/works/listing')]

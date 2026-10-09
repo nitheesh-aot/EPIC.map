@@ -1,14 +1,7 @@
-import { useState, type ElementType } from "react";
+import type { ElementType, ReactNode } from "react";
 import axios from "axios";
-import {
-  Box,
-  Button,
-  Chip,
-  IconButton,
-  Skeleton,
-  Typography,
-} from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { Box, IconButton, Skeleton, Typography } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import BeachAccessIcon from "@mui/icons-material/BeachAccess";
 import CategoryIcon from "@mui/icons-material/Category";
 import CloseIcon from "@mui/icons-material/Close";
@@ -22,9 +15,15 @@ import TerrainIcon from "@mui/icons-material/Terrain";
 import WaterDropIcon from "@mui/icons-material/WaterDrop";
 import { useProject, type ProjectPoint } from "@/api/useProjects";
 import {
+  BODY_TEXT,
   glyphForType,
   type ProjectGlyph,
-} from "@/components/Projects/projectIcons";
+  SECONDARY_TEXT_COLOR,
+  TEXT_COLOR,
+} from "@/components/Projects/projectUtils";
+import ExpandableText from "@/components/Projects/ExpandableText";
+import MapLayersSection from "@/components/Projects/MapLayersSection";
+import WorksSection from "@/components/Projects/WorksSection";
 import { PROJECT_CARD_WIDTH_PX } from "@/utils/config";
 
 const GLYPH_ICONS: Record<ProjectGlyph, ElementType> = {
@@ -39,9 +38,49 @@ const GLYPH_ICONS: Record<ProjectGlyph, ElementType> = {
   category: CategoryIcon,
 };
 
-const CERTIFICATE_COLOR = "#42814a";
+const TAG_COLORS = {
+  type: { fill: "#d8eafd", border: "#053662" },
+  region: { fill: "#f3f2f1", border: "#353433" },
+  certificate: { fill: "#f6fff8", border: "#42814a" },
+} as const;
 
-const DESCRIPTION_LINES = 3;
+const DESCRIPTION_LINES = 2;
+
+type ProjectTagProps = {
+  colors: (typeof TAG_COLORS)[keyof typeof TAG_COLORS];
+  icon?: ReactNode;
+  children: ReactNode;
+};
+
+/** A 24px identity tag: type, region or certificate. */
+const ProjectTag = ({ colors, icon, children }: ProjectTagProps) => (
+  <Box
+    component="span"
+    sx={{
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "0.375rem",
+      maxWidth: "100%",
+      height: "1.5rem",
+      padding: "0 0.5rem",
+      border: `1px solid ${colors.border}`,
+      borderRadius: "2px",
+      backgroundColor: colors.fill,
+      color: TEXT_COLOR,
+      fontSize: "0.75rem",
+      lineHeight: "1rem",
+      "& .MuiSvgIcon-root": { fontSize: "0.875rem", flexShrink: 0 },
+    }}
+  >
+    {icon}
+    <Box
+      component="span"
+      sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+    >
+      {children}
+    </Box>
+  </Box>
+);
 
 type ProjectCardProps = {
   projectId: number;
@@ -58,7 +97,6 @@ export default function ProjectCard({
 }: ProjectCardProps) {
   const theme = useTheme();
   const { data: project, error, isLoading } = useProject(projectId);
-  const [expanded, setExpanded] = useState(false);
 
   const name = project?.name ?? point?.name;
   const typeName = project?.typeName ?? point?.typeName ?? null;
@@ -66,12 +104,13 @@ export default function ProjectCard({
   const notOpen =
     axios.isAxiosError(error) && error.response?.status === 404;
 
-  const chipSx = {
-    height: "1.5rem",
-    borderRadius: "0.25rem",
-    fontSize: "0.75rem",
-    "& .MuiChip-icon": { fontSize: "0.875rem", color: "inherit" },
-  };
+  const message = (text: string) => (
+    <Typography
+      sx={{ marginTop: "0.5rem", fontSize: "0.875rem", color: SECONDARY_TEXT_COLOR }}
+    >
+      {text}
+    </Typography>
+  );
 
   return (
     <Box
@@ -88,13 +127,17 @@ export default function ProjectCard({
         width: `${PROJECT_CARD_WIDTH_PX}px`,
         maxWidth: "100%",
         backgroundColor: theme.palette.background.paper,
-        borderLeft: `1px solid ${theme.palette.divider}`,
         boxShadow: theme.shadows[4],
         overflowY: "auto",
       }}
     >
-      <Box sx={{ padding: "1rem", borderBottom: `1px solid ${theme.palette.divider}` }}>
-        <Box sx={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
+      <Box
+        sx={{
+          padding: "1rem 1rem 0.75rem",
+          borderBottom: `1px solid ${theme.palette.divider}`,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "flex-start", gap: "1rem" }}>
           <Typography
             id="epic-map-project-title"
             component="h2"
@@ -102,19 +145,19 @@ export default function ProjectCard({
               flexGrow: 1,
               minWidth: 0,
               fontSize: "1.125rem",
-              fontWeight: theme.typography.fontWeightBold,
-              lineHeight: 1.3,
+              fontWeight: 700,
+              lineHeight: 1.5,
+              color: TEXT_COLOR,
             }}
           >
             {name ?? <Skeleton width="70%" />}
           </Typography>
           <IconButton
-            size="small"
             onClick={onClose}
             aria-label="Close project"
-            sx={{ padding: "0.25rem", color: theme.palette.text.primary }}
+            sx={{ padding: 0, marginTop: "0.125rem", color: TEXT_COLOR }}
           >
-            <CloseIcon sx={{ fontSize: "1.25rem" }} />
+            <CloseIcon sx={{ fontSize: "1.5rem" }} />
           </IconButton>
         </Box>
 
@@ -126,17 +169,19 @@ export default function ProjectCard({
             <Skeleton />
           </>
         ) : notOpen ? (
-          <Typography variant="body2" color="text.secondary" sx={{ mt: "0.5rem" }}>
-            This project is no longer open in EPIC.Track.
-          </Typography>
+          message("This project is no longer open in EPIC.Track.")
         ) : error || !project ? (
-          <Typography variant="body2" color="text.secondary" sx={{ mt: "0.5rem" }}>
-            This project could not be loaded. Please try again.
-          </Typography>
+          message("This project could not be loaded. Please try again.")
         ) : (
           <>
             {project.proponentName && (
-              <Typography variant="body2" color="text.secondary">
+              <Typography
+                sx={{
+                  marginTop: "0.25rem",
+                  ...BODY_TEXT,
+                  color: SECONDARY_TEXT_COLOR,
+                }}
+              >
                 {project.proponentName}
               </Typography>
             )}
@@ -145,73 +190,43 @@ export default function ProjectCard({
                 display: "flex",
                 flexWrap: "wrap",
                 gap: "0.5rem",
-                marginTop: "0.75rem",
+                marginTop: "0.5rem",
               }}
             >
               {typeName && (
-                <Chip
+                <ProjectTag
+                  colors={TAG_COLORS.type}
                   icon={<TypeIcon aria-hidden />}
-                  label={typeName}
-                  variant="outlined"
-                  sx={{
-                    ...chipSx,
-                    backgroundColor: alpha(theme.palette.primary.main, 0.12),
-                    color: theme.palette.text.primary,
-                    borderColor: theme.palette.text.primary,
-                  }}
-                />
+                >
+                  {typeName}
+                </ProjectTag>
               )}
               {project.regionName && (
-                <Chip
+                <ProjectTag
+                  colors={TAG_COLORS.region}
                   icon={<PlaceOutlinedIcon aria-hidden />}
-                  label={project.regionName}
-                  variant="outlined"
-                  sx={chipSx}
-                />
+                >
+                  {project.regionName}
+                </ProjectTag>
               )}
               {project.eaCertificate && (
-                <Chip
-                  label={`Certificate # ${project.eaCertificate}`}
-                  variant="outlined"
-                  sx={{
-                    ...chipSx,
-                    color: CERTIFICATE_COLOR,
-                    borderColor: CERTIFICATE_COLOR,
-                  }}
-                />
+                <ProjectTag colors={TAG_COLORS.certificate}>
+                  {`Certificate # ${project.eaCertificate}`}
+                </ProjectTag>
               )}
             </Box>
             {project.description && (
-              <>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    marginTop: "0.75rem",
-                    lineHeight: 1.5,
-                    ...(expanded
-                      ? {}
-                      : {
-                          display: "-webkit-box",
-                          WebkitLineClamp: DESCRIPTION_LINES,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                        }),
-                  }}
-                >
-                  {project.description}
-                </Typography>
-                <Button
-                  size="small"
-                  onClick={() => setExpanded((open) => !open)}
-                  sx={{ padding: 0, minWidth: 0, textTransform: "none" }}
-                >
-                  {expanded ? "Read Less" : "Read More"}
-                </Button>
-              </>
+              <ExpandableText text={project.description} lines={DESCRIPTION_LINES} />
             )}
           </>
         )}
       </Box>
+      {project && !error && (
+        <>
+          <MapLayersSection />
+          <WorksSection projectId={projectId} />
+        </>
+      )}
     </Box>
   );
 }
