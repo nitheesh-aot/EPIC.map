@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, ButtonBase, Collapse, Skeleton, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
@@ -7,6 +7,8 @@ import {
   type ComponentTypeGroup,
   findVariant,
   groupComponents,
+  holdsVariant,
+  variantOfFeatures,
 } from "@/components/Projects/componentGrouping";
 import {
   BODY_TEXT,
@@ -18,6 +20,7 @@ import { useRevealedComponents } from "@/components/Projects/RevealedComponentsC
 import SubmissionGroup, {
   type ComponentControls,
   listSx,
+  type RowReveal,
 } from "@/components/Projects/SubmissionGroup";
 
 const EMPTY_TEXT_COLOR = "#757371";
@@ -71,6 +74,32 @@ const ComponentTypeSection = ({
 }: ComponentTypeSectionProps) => {
   const [open, setOpen] = useState(true);
   const bodyId = `epic-map-project-${group.type.replace(/\s+/g, "-").toLowerCase()}`;
+  const bodyRef = useRef<HTMLUListElement>(null);
+
+  const { reveal } = controls;
+  const revealHere =
+    reveal &&
+    group.submissions.some(({ labels }) =>
+      labels.some(holdsVariant(reveal.key)),
+    )
+      ? reveal
+      : null;
+  const [opening, setOpening] = useState(false);
+  const [seenReveal, setSeenReveal] = useState(revealHere);
+  if (revealHere !== seenReveal) {
+    setSeenReveal(revealHere);
+    if (revealHere && !open) {
+      setOpen(true);
+      setOpening(true);
+    }
+  }
+
+  useEffect(() => {
+    if (!revealHere || opening) return;
+    bodyRef.current
+      ?.querySelector("[data-selected]")
+      ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [revealHere, opening]);
 
   return (
     <Box component="section" sx={{ marginTop: "0.5rem" }}>
@@ -106,8 +135,8 @@ const ComponentTypeSection = ({
           {group.title}
         </Typography>
       </ButtonBase>
-      <Collapse in={open}>
-        <Box component="ul" id={bodyId} sx={listSx}>
+      <Collapse in={open} onEntered={() => setOpening(false)}>
+        <Box component="ul" id={bodyId} ref={bodyRef} sx={listSx}>
           {group.submissions.map((submission) => (
             <SubmissionGroup
               key={submission.key}
@@ -132,13 +161,24 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
   } = useProjectComponents(projectId);
   const groups = useMemo(() => groupComponents(components ?? []), [components]);
   // Submissions switched off. Everything starts on.
-  const [hiddenSubmissions, setHiddenSubmissions] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  const [hiddenSubmissions, setHiddenSubmissions] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const [hiddenByUser, setHiddenByUser] = useState<ReadonlySet<string> | null>(
     null,
   );
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [reveal, setReveal] = useState<RowReveal | null>(null);
+  const { mapPick } = useRevealedComponents();
+  const [seenPick, setSeenPick] = useState(mapPick);
+  if (mapPick !== seenPick) {
+    setSeenPick(mapPick);
+    const picked = mapPick && variantOfFeatures(groups, mapPick.featureIds);
+    if (picked) {
+      setSelectedKey(picked.key);
+      setReveal({ key: picked.key });
+    }
+  }
 
   const startHidden = useMemo(
     () =>
@@ -181,6 +221,7 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
     selectedKey,
     select: (key) =>
       setSelectedKey((current) => (current === key ? null : key)),
+    reveal,
   };
 
   const toggle = (submissionKey: string) =>

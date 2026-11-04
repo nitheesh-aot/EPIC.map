@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   componentSpecIds,
+  eaoFeatureIdsAt,
   eaoSpecFilters,
   FOOTPRINT_SPEC_IDS,
   footprintDrawnIds,
@@ -247,6 +248,40 @@ describe("clicking a footprint", () => {
     const map = fakeMap([{ properties: {} }, { properties: { track_id: 44 } }]);
 
     expect(footprintTrackIdAt(map as never, { x: 1, y: 1 } as never)).toBe(44);
+  });
+});
+
+describe("clicking a component", () => {
+  const drawn = [drawnId("footprint-fill"), drawnId("component-fill")];
+  const box: [[number, number], [number, number]] = [
+    [0, 0],
+    [2, 2],
+  ];
+
+  const fakeMap = (hits: object[]) => ({
+    getStyle: () => ({ layers: drawn.map((id) => ({ id })) }),
+    getLayer: (id: string) => ({ id }),
+    queryRenderedFeatures: vi.fn(() => hits),
+  });
+
+  it("is tested against footprints and components alike", () => {
+    const map = fakeMap([]);
+
+    eaoFeatureIdsAt(map as never, box);
+
+    expect(map.queryRenderedFeatures).toHaveBeenCalledWith(box, { layers: drawn });
+  });
+
+  it("answers with each feature once, top first", () => {
+    // A shape crossing a tile seam comes back once per tile.
+    const map = fakeMap([
+      { properties: { feature_id: "{C1}" } },
+      { properties: { feature_id: "{FP}" } },
+      { properties: { feature_id: "{C1}" } },
+      { properties: {} },
+    ]);
+
+    expect(eaoFeatureIdsAt(map as never, box)).toEqual(["{C1}", "{FP}"]);
   });
 });
 

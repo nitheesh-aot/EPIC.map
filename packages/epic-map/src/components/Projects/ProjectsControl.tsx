@@ -8,7 +8,10 @@ import type {
 } from "maplibre-gl";
 import { useProjectFeatures } from "@/api/useProjects";
 import { useFilters } from "@/components/Filters/FiltersContext";
-import { footprintTrackIdAt } from "@/components/Layers/eaoVisibility";
+import {
+  eaoFeatureIdsAt,
+  footprintTrackIdAt,
+} from "@/components/Layers/eaoVisibility";
 import ProjectCard from "@/components/Projects/ProjectCard";
 import ProjectTooltip from "@/components/Projects/ProjectTooltip";
 import {
@@ -23,7 +26,12 @@ import {
   setSelectedProject,
   showProjects,
 } from "@/components/Projects/projectUtils";
-import { FOCUS_FLY_MS, PROJECT_CARD_WIDTH_PX } from "@/utils/config";
+import { useRevealedComponents } from "@/components/Projects/RevealedComponentsContext";
+import {
+  FOCUS_FLY_MS,
+  METADATA_TOLERANCE_PX,
+  PROJECT_CARD_WIDTH_PX,
+} from "@/utils/config";
 
 /** Space kept between a revealed dot and the card's edge. */
 const REVEAL_MARGIN_PX = 48;
@@ -50,6 +58,7 @@ export default function ProjectsControl({
 }: ProjectsControlProps) {
   const { data } = useProjectFeatures();
   const { visibleProjects } = useFilters();
+  const { setMapPick } = useRevealedComponents();
 
   const visibleIds = useMemo(
     () => new Set(visibleProjects.map((project) => project.id)),
@@ -109,9 +118,18 @@ export default function ProjectsControl({
     const onClick = (event: MapMouseEvent) => {
       // The dot first, then the boundary under it: a dot sits on top of its
       // own footprint, and hitting either should open the same project.
-      const projectId =
-        projectIdAt(map, event.point, selectedRef.current) ??
-        footprintTrackIdAt(map, event.point);
+      const dotId = projectIdAt(map, event.point, selectedRef.current);
+      // A dot is its project, not one of its components.
+      if (dotId === null) {
+        const { x, y } = event.point;
+        const t = METADATA_TOLERANCE_PX;
+        const featureIds = eaoFeatureIdsAt(map, [
+          [x - t, y - t],
+          [x + t, y + t],
+        ]);
+        if (featureIds.length) setMapPick({ featureIds });
+      }
+      const projectId = dotId ?? footprintTrackIdAt(map, event.point);
       if (projectId === null) return;
       onSelectRef.current(projectId);
       revealBesideCard(map, event.lngLat);
@@ -170,7 +188,7 @@ export default function ProjectsControl({
       map.off("move", onCameraMove);
       clearHover();
     };
-  }, [map, clearHover]);
+  }, [map, clearHover, setMapPick]);
 
   // A filter that excludes the selected project closes its card. The dot is
   // gone from the map, so a card still describing the project would describe

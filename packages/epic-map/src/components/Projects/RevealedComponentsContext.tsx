@@ -6,6 +6,11 @@ import {
   type ReactNode,
 } from "react";
 
+/** EAO features under one map click, top first. A new object per click. */
+export interface MapPick {
+  featureIds: readonly string[];
+}
+
 interface RevealedComponents {
   featureIds: readonly string[];
   setFeatureIds: (ids: readonly string[]) => void;
@@ -13,11 +18,14 @@ interface RevealedComponents {
   setHiddenFootprintIds: (ids: readonly string[]) => void;
   selectedFeatureIds: readonly string[];
   setSelectedFeatureIds: (ids: readonly string[]) => void;
+  mapPick: MapPick | null;
+  setMapPick: (pick: MapPick | null) => void;
 }
 
 /**
  * Shared between the project panel, which switches components on and off and
- * selects one, and the EAO layer, which draws them
+ * selects one, and the EAO layer, which draws them. A click on the map comes
+ * back the other way, so the panel can select what was clicked.
  */
 const RevealedComponentsContext = createContext<RevealedComponents>({
   featureIds: [],
@@ -26,6 +34,8 @@ const RevealedComponentsContext = createContext<RevealedComponents>({
   setHiddenFootprintIds: () => {},
   selectedFeatureIds: [],
   setSelectedFeatureIds: () => {},
+  mapPick: null,
+  setMapPick: () => {},
 });
 
 export const RevealedComponentsProvider = ({
@@ -40,6 +50,7 @@ export const RevealedComponentsProvider = ({
   const [selectedFeatureIds, setSelectedFeatureIds] = useState<
     readonly string[]
   >([]);
+  const [mapPick, setMapPick] = useState<MapPick | null>(null);
   const value = useMemo(
     () => ({
       featureIds,
@@ -48,8 +59,10 @@ export const RevealedComponentsProvider = ({
       setHiddenFootprintIds,
       selectedFeatureIds,
       setSelectedFeatureIds,
+      mapPick,
+      setMapPick,
     }),
-    [featureIds, hiddenFootprintIds, selectedFeatureIds],
+    [featureIds, hiddenFootprintIds, selectedFeatureIds, mapPick],
   );
 
   return (

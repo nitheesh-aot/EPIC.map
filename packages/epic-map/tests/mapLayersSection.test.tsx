@@ -4,9 +4,10 @@
 // reveal on the map. How they are grouped is componentGrouping's own test.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ProjectComponent } from "@/api/useProjects";
 import {
+  type MapPick,
   RevealedComponentsProvider,
   useRevealedComponents,
 } from "@/components/Projects/RevealedComponentsContext";
@@ -65,8 +66,14 @@ const revealed: {
   selected: readonly string[];
 } = { ids: [], hidden: [], selected: [] };
 
+/** Stands in for a click on the map, as ProjectsControl reports it. */
+let setMapPick: (pick: MapPick | null) => void = () => {};
+const clickMap = (...featureIds: string[]) => act(() => setMapPick({ featureIds }));
+
 const Probe = () => {
-  const { featureIds, hiddenFootprintIds, selectedFeatureIds } = useRevealedComponents();
+  const { featureIds, hiddenFootprintIds, selectedFeatureIds, ...rest } =
+    useRevealedComponents();
+  setMapPick = rest.setMapPick;
   revealed.ids = featureIds;
   revealed.hidden = hiddenFootprintIds;
   revealed.selected = selectedFeatureIds;
@@ -362,5 +369,136 @@ describe("selecting a component", () => {
 
     expect(screen.getByText("Component 7")).toBeDefined();
     expect(screen.queryByText("Component 6")).toBeNull();
+  });
+});
+
+describe("clicking a component on the map", () => {
+  const row = (name: string) => screen.getByRole("button", { name });
+  const scrolled: Element[] = [];
+
+  beforeEach(() => {
+    scrolled.length = 0;
+    // jsdom lays nothing out, so has no scrollIntoView of its own.
+    Element.prototype.scrollIntoView = vi.fn(function (this: Element) {
+      scrolled.push(this);
+    });
+  });
+
+  it("selects its row, as a click on the row would", () => {
+    renderSection();
+
+    clickMap("{V2}");
+
+    expect(row("Pacific Water Shrew").getAttribute("aria-pressed")).toBe("true");
+    expect(revealed.selected).toEqual(["{V2}"]);
+  });
+
+  it("moves the selection off the row selected before", () => {
+    renderSection();
+    fireEvent.click(row("Access Route Amendment 1"));
+
+    clickMap("{V1}");
+
+    expect(row("Access Route Amendment 1").getAttribute("aria-pressed")).toBe("false");
+    expect(row("Data sensitive").getAttribute("aria-pressed")).toBe("true");
+    expect(revealed.selected).toEqual(["{V1}"]);
+  });
+
+  it("selects the topmost of the project's own features it hit", () => {
+    renderSection();
+
+    clickMap("{ANOTHER-PROJECT}", "{P1}", "{V1}");
+
+    expect(revealed.selected).toEqual(["{P1}"]);
+  });
+
+  it("leaves the selection where the click hit nothing of this project", () => {
+    renderSection();
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    clickMap("{ANOTHER-PROJECT}");
+
+    expect(revealed.selected).toEqual(["{V2}"]);
+  });
+
+  it("keeps it selected when clicked again", () => {
+    renderSection();
+
+    clickMap("{V2}");
+    clickMap("{V2}");
+
+    expect(revealed.selected).toEqual(["{V2}"]);
+  });
+
+  it("ignores the click that opened the panel", () => {
+    const { rerender } = render(
+      <RevealedComponentsProvider>
+        <Probe />
+      </RevealedComponentsProvider>,
+    );
+    clickMap("{V2}");
+
+    rerender(
+      <RevealedComponentsProvider>
+        <MapLayersSection projectId={7} />
+        <Probe />
+      </RevealedComponentsProvider>,
+    );
+
+    expect(revealed.selected).toEqual([]);
+  });
+
+  it("scrolls the row into view", () => {
+    renderSection();
+
+    clickMap("{V2}");
+
+    expect(scrolled).toEqual([row("Pacific Water Shrew")]);
+  });
+
+  it("scrolls to it again when it is clicked again", () => {
+    renderSection();
+
+    clickMap("{V2}");
+    clickMap("{V2}");
+
+    expect(scrolled).toHaveLength(2);
+  });
+
+  it("shows all of a submission whose rest hides the row", () => {
+    state.components = Array.from({ length: 7 }, (_, index) =>
+      component({ featureId: `{L${index}}`, label: `Component ${index + 1}` }),
+    );
+    renderSection();
+
+    clickMap("{L6}");
+
+    expect(screen.getByText("Component 6")).toBeDefined();
+    expect(row("Component 7").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Show fewer" })).toBeDefined();
+    expect(scrolled).toEqual([row("Component 7")]);
+  });
+
+  it("leaves a submission collapsed when the row is above its fold", () => {
+    state.components = Array.from({ length: 7 }, (_, index) =>
+      component({ featureId: `{L${index}}`, label: `Component ${index + 1}` }),
+    );
+    renderSection();
+
+    clickMap("{L1}");
+
+    expect(screen.queryByText("Component 6")).toBeNull();
+  });
+
+  it("opens a closed section, then scrolls once it is open", async () => {
+    renderSection();
+    const section = screen.getByRole("button", { name: "Value Components" });
+    fireEvent.click(section);
+
+    clickMap("{V2}");
+
+    expect(section.getAttribute("aria-expanded")).toBe("true");
+    expect(scrolled).toEqual([]);
+    await waitFor(() => expect(scrolled).toEqual([row("Pacific Water Shrew")]));
   });
 });

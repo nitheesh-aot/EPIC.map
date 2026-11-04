@@ -8,6 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { MapProject } from "@/components/Filters/filterUtils";
 import type { ProjectFeatures } from "@/api/useProjects";
+import {
+  type MapPick,
+  RevealedComponentsProvider,
+  useRevealedComponents,
+} from "@/components/Projects/RevealedComponentsContext";
 
 const project = (id: number): MapProject => ({
   id,
@@ -35,10 +40,20 @@ const feature = (id: number): ProjectFeatures["features"][number] => ({
   },
 });
 
-const state: { data: ProjectFeatures | undefined; visible: MapProject[] } = {
+const state: {
+  data: ProjectFeatures | undefined;
+  visible: MapProject[];
+  eaoHits: string[];
+} = {
   data: undefined,
   visible: [],
+  eaoHits: [],
 };
+
+vi.mock("@/components/Layers/eaoVisibility", () => ({
+  eaoFeatureIdsAt: () => state.eaoHits,
+  footprintTrackIdAt: () => null,
+}));
 
 vi.mock("@/api/useProjects", () => ({
   useProjectFeatures: () => ({ data: state.data }),
@@ -106,6 +121,7 @@ const hoverOver = (map: FakeMap) =>
 beforeEach(() => {
   state.data = features([1, 2]);
   state.visible = [project(1), project(2)];
+  state.eaoHits = [];
 });
 afterEach(cleanup);
 
@@ -203,5 +219,60 @@ describe("the name on hover", () => {
     );
 
     expect(screen.queryByText("Project 1")).toBeNull();
+  });
+});
+
+describe("a click on a project's components", () => {
+  const picked: { current: MapPick | null } = { current: null };
+  const Probe = () => {
+    picked.current = useRevealedComponents().mapPick;
+    return null;
+  };
+  const renderControl = (map: FakeMap) =>
+    render(
+      <RevealedComponentsProvider>
+        <ProjectsControl map={map as never} selectedId={1} onSelect={vi.fn()} />
+        <Probe />
+      </RevealedComponentsProvider>,
+    );
+  const click = (map: FakeMap) =>
+    act(() =>
+      handlerFor(map, "click")({
+        point: { x: 1, y: 1 },
+        lngLat: { lng: -123, lat: 50 },
+      }),
+    );
+
+  beforeEach(() => {
+    picked.current = null;
+  });
+
+  it("tells the panel which EAO features it hit", () => {
+    state.eaoHits = ["{C1}", "{FP}"];
+    const map = fakeMap([]);
+    renderControl(map);
+
+    click(map);
+
+    expect(picked.current?.featureIds).toEqual(["{C1}", "{FP}"]);
+  });
+
+  it("tells it nothing where it hit no EAO feature", () => {
+    const map = fakeMap([]);
+    renderControl(map);
+
+    click(map);
+
+    expect(picked.current).toBeNull();
+  });
+
+  it("leaves a click on a dot to the dot", () => {
+    state.eaoHits = ["{FP}"];
+    const map = fakeMap([dot(1)]);
+    renderControl(map);
+
+    click(map);
+
+    expect(picked.current).toBeNull();
   });
 });

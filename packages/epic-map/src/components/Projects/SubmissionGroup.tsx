@@ -13,6 +13,7 @@ import {
 import { rowIconButtonSx, toggleSx } from "@/components/Layers/LayerRow";
 import {
   type ComponentFlag as Flag,
+  holdsVariant,
   type LabelGroup,
   type Submission,
   submissionDate,
@@ -85,11 +86,17 @@ const Detail = ({ name, value }: { name: string; value: string }) => (
   </Box>
 );
 
+/** A row picked on the map, to be brought into view. A new object per pick. */
+export interface RowReveal {
+  key: string;
+}
+
 export interface ComponentControls {
   isShown: (featureIds: readonly string[]) => boolean;
   setShown: (featureIds: readonly string[], shown: boolean) => void;
   selectedKey: string | null;
   select: (variantKey: string) => void;
+  reveal: RowReveal | null;
 }
 
 const EYE_CLASS = "epic-map-component-eye";
@@ -149,6 +156,7 @@ const Selectable = ({
 }: SelectableProps) => (
   <ButtonBase
     aria-pressed={selected}
+    data-selected={selected || undefined}
     onClick={onSelect}
     sx={{
       display: "block",
@@ -291,13 +299,27 @@ export default function SubmissionGroup({
   const title = submissionTitle(submission);
   const { labels } = submission;
   const collapsible = labels.length > COLLAPSED_LABELS;
+
+  // Set while rendering, not in an effect, so the row is there to scroll to.
+  const { reveal } = controls;
+  const [seenReveal, setSeenReveal] = useState(reveal);
+  if (reveal !== seenReveal) {
+    setSeenReveal(reveal);
+    if (
+      reveal &&
+      labels.findIndex(holdsVariant(reveal.key)) >= COLLAPSED_LABELS
+    ) {
+      setExpanded(true);
+    }
+  }
+
   // A selected component stays in view when the rest collapse.
   const shownLabels =
     collapsible && !expanded
       ? labels.filter(
-          ({ variants }, index) =>
+          (label, index) =>
             index < COLLAPSED_LABELS ||
-            variants.some(({ key }) => key === controls.selectedKey),
+            holdsVariant(controls.selectedKey)(label),
         )
       : labels;
 

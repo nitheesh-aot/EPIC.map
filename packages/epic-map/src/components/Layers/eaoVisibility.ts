@@ -1,4 +1,8 @@
-import type { Map as MapLibreMap, Point as MapLibrePoint } from "maplibre-gl";
+import type {
+  Map as MapLibreMap,
+  Point as MapLibrePoint,
+  PointLike,
+} from "maplibre-gl";
 import type { LocalLayerStyle } from "@/components/Layers/layerUtils";
 import { localDrawnIds } from "@/components/Layers/layerUtils";
 import { EAO_OBJECT_NAME, localLayerId } from "@/utils/localLayers";
@@ -96,4 +100,24 @@ export const footprintTrackIdAt = (
     if (Number.isFinite(trackId)) return trackId;
   }
   return null;
+};
+
+/**
+ * The EAO features under a click, top of the drawing first: components and
+ * footprints alike, for the open panel to pick its own from.
+ */
+export const eaoFeatureIdsAt = (
+  map: MapLibreMap,
+  box: [PointLike, PointLike],
+): string[] => {
+  const layers = localDrawnIds(map, localLayerId(EAO_OBJECT_NAME)).filter((id) =>
+    map.getLayer(id),
+  );
+  if (layers.length === 0) return [];
+
+  const ids = map
+    .queryRenderedFeatures(box, { layers })
+    .map((feature) => feature.properties?.feature_id)
+    .filter((id): id is string => typeof id === "string");
+  return [...new Set(ids)];
 };

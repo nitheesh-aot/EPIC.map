@@ -149,15 +149,35 @@ export const groupComponents = (
     ).map(toSubmission),
   })).filter(({ submissions }) => submissions.length > 0);
 
+const variantsOf = (groups: readonly ComponentTypeGroup[]) =>
+  groups
+    .flatMap(({ submissions }) => submissions)
+    .flatMap(({ labels }) => labels)
+    .flatMap(({ variants }) => variants);
+
 export const findVariant = (
   groups: readonly ComponentTypeGroup[],
   key: string | null,
 ): CommentVariant | undefined =>
-  groups
-    .flatMap(({ submissions }) => submissions)
-    .flatMap(({ labels }) => labels)
-    .flatMap(({ variants }) => variants)
-    .find((variant) => variant.key === key);
+  variantsOf(groups).find((variant) => variant.key === key);
+
+/** The row of the first of these features that is one of the groups'. */
+export const variantOfFeatures = (
+  groups: readonly ComponentTypeGroup[],
+  featureIds: readonly string[],
+): CommentVariant | undefined => {
+  const variants = variantsOf(groups);
+  for (const id of featureIds) {
+    const variant = variants.find(({ featureIds: ids }) => ids.includes(id));
+    if (variant) return variant;
+  }
+  return undefined;
+};
+
+export const holdsVariant =
+  (key: string | null) =>
+  ({ variants }: LabelGroup) =>
+    variants.some((variant) => variant.key === key);
 
 /** "Category · Subcategory · Number", leaving out whichever is absent. */
 export const submissionTitle = ({ category, subcategory, number }: Submission) =>
